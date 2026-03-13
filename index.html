@@ -116,7 +116,7 @@
 </div>
 
 <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyMdXegFmTVYOEEYFvyDeAhFaIgVBLbAIPmNMs62a9X4HpPXn5FP_RIWqU_0O9DiYg/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbx_MtA8K-ZnzBg1RMG1NRCJIHhOR-yqUIssRF1KTWVxELR_bJy-1M1-Xr7DEBN_DzI/exec";
     let products = {};
 
     // GASよりデータ取得
@@ -180,26 +180,22 @@
         }
     }
 
-    // --- パスワード付き：削除処理 ---
+    // --- 修正版：パスワード付きの削除処理（即時画面からも消える） ---
     async function deleteProduct(name) {
         const pass = prompt(`「${name}」を削除します。パスワードを入力してください`);
         if (!pass) return;
         try {
-            const payload = {
-                pass: pass, // これがないとGAS側でブロックされます
-                action: "delete",
-                name: name
-            };
-            const res = await fetch(GAS_URL, {
-                method: "POST",
-                body: JSON.stringify(payload)
-            });
+            const payload = { pass: pass, action: "delete", name: name };
+            const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
             const result = await res.json();
-            if(result.status === "error") {
-                alert("パスワードが違います");
-            } else {
+            if(result.status === "success") {
                 alert("削除しました");
-                location.reload(); // 成功したら画面をリロードして反映
+                // 画面上のデータ(products変数)からも削除
+                delete products[name];
+                // 再描画して「(2件)」などの表示も更新
+                refreshUI();
+            } else {
+                alert("削除に失敗しました（パスワード違いなど）");
             }
         } catch (err) {
             alert("通信エラーが発生しました");
