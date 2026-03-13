@@ -77,11 +77,11 @@
                     step="0.01" 
                     inputmode="decimal" 
                     oninput="calculate()" 
-                    autocomplete="off" 
+                    autocomplete="one-time-code" 
                     autocorrect="off" 
                     autocapitalize="off" 
                     spellcheck="false" 
-                    enterkeyhint="next" 
+                    enterkeyhint="done" 
                 >
             </div>
         </div>
@@ -97,7 +97,16 @@
         <div class="card">
             <h2>➕ 商品の新規登録 / 編集</h2>
             <div class="form-grid">
-                <input type="text" id="itemName" placeholder="商品名" autocomplete="one-time-code">
+                <input 
+                    type="text" 
+                    id="itemTitleInput" 
+                    name="product_entry_field" 
+                    placeholder="商品名を入力" 
+                    autocomplete="one-time-code"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                >
                 <input 
                     type="number" 
                     id="unitWeight" 
@@ -169,7 +178,8 @@
 
     // --- 修正版：商品登録 ---
     async function addProduct() {
-        const name = document.getElementById('itemName').value.trim();
+        // ここだけ変更: 新しい商品名入力欄に対応
+        const name = document.getElementById('itemTitleInput').value.trim();
         const weight = document.getElementById('unitWeight').value;
         const fileInput = document.getElementById('itemImage');
         
@@ -226,7 +236,7 @@
     }
 
     function clearForm() {
-        document.getElementById('itemName').value = '';
+        document.getElementById('itemTitleInput').value = '';
         document.getElementById('unitWeight').value = '';
         document.getElementById('itemImage').value = '';
     }
