@@ -218,15 +218,56 @@
             } catch (err) { alert("通信エラーが発生しました"); }
         };
 
+        // ここから変更
         if (fileInput.files && fileInput.files[0]) {
+
+            const file = fileInput.files[0];
             const reader = new FileReader();
-            reader.onload = (e) => doPost(e.target.result);
-            reader.readAsDataURL(fileInput.files[0]);
+
+            reader.onload = (e) => {
+
+                // 画像をリサイズ・圧縮するための処理
+                const img = new Image();
+
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // 最大幅を設定 (スプレッドシートに入るよう小さめに設定)
+                    const MAX_WIDTH = 200;
+                    let width = img.width;
+                    let height = img.height;
+
+                    // アスペクト比を維持してリサイズ
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // JPEG形式で画質を落としてBase64化 (0.7は画質)
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+                    doPost(compressedBase64); // 圧縮したデータを送信
+                };
+
+                img.src = e.target.result;
+
+            };
+
+            reader.readAsDataURL(file);
+
         } else {
+
             // 編集時は既存画像を引き継ぐ
             const existingImage = editingOriginalName ? (products[editingOriginalName]?.image || null) : (products[name]?.image || null);
             doPost(existingImage);
+
         }
+        // ここまで変更
     }
 
     // --- 修正版：パスワード付きの削除処理（即時画面からも消える） ---
