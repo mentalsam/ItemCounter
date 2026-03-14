@@ -41,7 +41,10 @@
         .result-number { font-size: 4rem; font-weight: 800; color: #38bdf8; }
 
         .btn-add { background: var(--success); color: white; border: none; font-weight: bold; cursor: pointer; }
-        .btn-delete { color: var(--danger); background: none; border: 1px solid var(--danger); width: auto; padding: 5px 10px; cursor: pointer; }
+        .btn-delete { color: var(--danger); background: none; border: 1px solid var(--danger); width: auto; padding: 5px 10px; cursor: pointer; border-radius: 6px; }
+        .btn-edit { color: var(--primary); background: none; border: 1px solid var(--primary); width: auto; padding: 5px 10px; cursor: pointer; border-radius: 6px; margin-right: 4px; }
+        .edit-mode-banner { background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 10px 15px; margin-bottom: 12px; font-size: 13px; color: #854d0e; display: flex; align-items: center; gap: 8px; }
+        .btn-cancel { background: var(--secondary); color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 8px; }
         .hidden { display: none; }
         
         @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
@@ -96,6 +99,9 @@
     <div id="tab-admin" class="hidden">
         <div class="card">
             <h2>➕ 商品の新規登録 / 編集</h2>
+            <div id="editModeBanner" class="edit-mode-banner hidden">
+                ✏️ <strong id="editTargetName"></strong> を編集中です
+            </div>
             <div class="form-grid">
                 <input 
                     type="text" 
@@ -124,7 +130,10 @@
                 <label style="font-size: 12px;">商品画像</label>
                 <input type="file" id="itemImage" accept="image/*">
             </div>
-            <button class="btn-add" onclick="addProduct()" style="margin-top:15px;">データベースへ保存</button>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-add" onclick="addProduct()" style="margin-top:15px; flex:1;" id="saveBtn">データベースへ保存</button>
+                <button class="btn-cancel hidden" onclick="cancelEdit()" style="margin-top:15px; flex:0 0 auto; padding: 12px 20px; border-radius: 8px;" id="cancelBtn">キャンセル</button>
+            </div>
         </div>
 
         <div class="card">
@@ -148,7 +157,7 @@
 </div>
 
 <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbwGDaPQ3Sr8Q2nJo0kh6gFQVfaPxpFicLM4IHG-V-QhN4mhm7CqaQY2LYBUeBWYg0A/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwN8CncPnFE5uPY2DE97zrKkDltY3MhcHIuNXVz-iDylM-KhGR0f3FackMDEY6wdVk/exec";
     let products = {};
 
     // GASよりデータ取得
@@ -176,30 +185,35 @@
         refreshUI();
     }
 
-    // --- 修正版：商品登録 ---
+    // --- 修正版：商品登録 / 編集対応 ---
     async function addProduct() {
-        // ここだけ変更: 新しい商品名入力欄に対応
         const name = document.getElementById('itemTitleInput').value.trim();
         const weight = document.getElementById('unitWeight').value;
         const fileInput = document.getElementById('itemImage');
         
-        // 追記：パスワード入力を求める
         const pass = prompt("店番を入力してください");
         if (!pass) return;
         if (!name || !weight) return alert("商品名と重量は必須です");
 
         const doPost = async (imgData) => {
             const payload = {
-                pass: pass, // パスワードを同封
+                pass: pass,
                 name: name,
                 weight: parseFloat(weight),
                 image: imgData
             };
+            // 編集モードの場合：元の名前と異なればoldNameも送る
+            if (editingOriginalName && editingOriginalName !== name) {
+                payload.oldName = editingOriginalName;
+                payload.action = "update";
+            } else if (editingOriginalName) {
+                payload.action = "update";
+            }
             try {
                 const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
                 const result = await res.json();
                 if(result.status === "error") return alert("パスワードが違います");
-                alert("クラウドに保存しました！");
+                alert(editingOriginalName ? "更新しました！" : "クラウドに保存しました！");
                 location.reload();
             } catch (err) { alert("通信エラーが発生しました"); }
         };
@@ -209,7 +223,9 @@
             reader.onload = (e) => doPost(e.target.result);
             reader.readAsDataURL(fileInput.files[0]);
         } else {
-            doPost(products[name]?.image || null);
+            // 編集時は既存画像を引き継ぐ
+            const existingImage = editingOriginalName ? (products[editingOriginalName]?.image || null) : (products[name]?.image || null);
+            doPost(existingImage);
         }
     }
 
@@ -235,10 +251,42 @@
         }
     }
 
+    let editingOriginalName = null; // 編集中の元の商品名を保持
+
+    // --- 編集モードに入る ---
+    function editProduct(name) {
+        const item = products[name];
+        if (!item) return;
+        editingOriginalName = name;
+
+        document.getElementById('itemTitleInput').value = name;
+        document.getElementById('unitWeight').value = item.weight;
+        document.getElementById('itemImage').value = '';
+
+        document.getElementById('editModeBanner').classList.remove('hidden');
+        document.getElementById('editTargetName').textContent = name;
+        document.getElementById('cancelBtn').classList.remove('hidden');
+        document.getElementById('saveBtn').textContent = '変更を保存';
+
+        // フォームまでスクロール
+        document.getElementById('itemTitleInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('itemTitleInput').focus();
+    }
+
+    // --- 編集キャンセル ---
+    function cancelEdit() {
+        editingOriginalName = null;
+        clearForm();
+    }
+
     function clearForm() {
+        editingOriginalName = null;
         document.getElementById('itemTitleInput').value = '';
         document.getElementById('unitWeight').value = '';
         document.getElementById('itemImage').value = '';
+        document.getElementById('editModeBanner').classList.add('hidden');
+        document.getElementById('cancelBtn').classList.add('hidden');
+        document.getElementById('saveBtn').textContent = 'データベースへ保存';
     }
 
     function refreshUI() {
@@ -274,6 +322,7 @@
                 <td><strong>${name}</strong></td>
                 <td>${parseFloat(item.weight).toFixed(3)}</td>
                 <td>
+                    <button class="btn-edit" onclick="editProduct('${name}')">編集</button>
                     <button class="btn-delete" onclick="deleteProduct('${name}')">削除</button>
                 </td>
             `;
