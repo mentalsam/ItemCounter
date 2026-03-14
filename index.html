@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>商品管理システム v2.0</title>
+    <title>商品管理システム v2.1</title>
     <style>
         :root { 
             --primary: #2563eb; 
@@ -46,6 +46,11 @@
         .edit-mode-banner { background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 10px 15px; margin-bottom: 12px; font-size: 13px; color: #854d0e; display: flex; align-items: center; gap: 8px; }
         .btn-cancel { background: var(--secondary); color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 8px; }
         .hidden { display: none; }
+        
+        /* テーブルの行ホバー効果 */
+        #dbList tr:hover {
+            background-color: #f1f5f9;
+        }
         
         @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
     </style>
@@ -160,13 +165,11 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbwN8CncPnFE5uPY2DE97zrKkDltY3MhcHIuNXVz-iDylM-KhGR0f3FackMDEY6wdVk/exec";
     let products = {};
 
-    // GASよりデータ取得
     window.onload = async () => {
         try {
             const response = await fetch(GAS_URL);
             const data = await response.json();
             products = {};
-            // item: {name, weight, image}
             data.forEach(item => {
                 products[item.name] = { weight: item.weight, image: item.image };
             });
@@ -185,7 +188,27 @@
         refreshUI();
     }
 
-    // --- 修正版：商品登録 / 編集対応 ---
+    // 追加: selectAndJump 関数（showTabの直後に挿入）
+    function selectAndJump(name) {
+
+        // 1. 計測タブを表示
+        showTab('calc');
+
+        // 2. 検索窓をクリア（全リストを表示させるため）
+        document.getElementById('searchInput').value = '';
+        updateDropdown();
+
+        // 3. セレクトボックスで該当の商品を選択
+        const select = document.getElementById('productSelect');
+        select.value = name;
+
+        // 4. 表示（画像や単重）を更新
+        updateDisplay();
+
+        // 5. 総重量入力欄にフォーカスを当てる（すぐ入力できるように）
+        document.getElementById('totalKg').focus();
+    }
+
     async function addProduct() {
         const name = document.getElementById('itemTitleInput').value.trim();
         const weight = document.getElementById('unitWeight').value;
@@ -202,7 +225,6 @@
                 weight: parseFloat(weight),
                 image: imgData
             };
-            // 編集モードの場合：元の名前と異なればoldNameも送る
             if (editingOriginalName && editingOriginalName !== name) {
                 payload.oldName = editingOriginalName;
                 payload.action = "update";
@@ -218,59 +240,36 @@
             } catch (err) { alert("通信エラーが発生しました"); }
         };
 
-        // ここから変更
         if (fileInput.files && fileInput.files[0]) {
-
             const file = fileInput.files[0];
             const reader = new FileReader();
-
             reader.onload = (e) => {
-
-                // 画像をリサイズ・圧縮するための処理
                 const img = new Image();
-
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
-
-                    // 最大幅を設定 (スプレッドシートに入るよう小さめに設定)
                     const MAX_WIDTH = 200;
                     let width = img.width;
                     let height = img.height;
-
-                    // アスペクト比を維持してリサイズ
                     if (width > MAX_WIDTH) {
                         height *= MAX_WIDTH / width;
                         width = MAX_WIDTH;
                     }
-
                     canvas.width = width;
                     canvas.height = height;
                     ctx.drawImage(img, 0, 0, width, height);
-
-                    // JPEG形式で画質を落としてBase64化 (0.7は画質)
                     const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-
-                    doPost(compressedBase64); // 圧縮したデータを送信
+                    doPost(compressedBase64);
                 };
-
                 img.src = e.target.result;
-
             };
-
             reader.readAsDataURL(file);
-
         } else {
-
-            // 編集時は既存画像を引き継ぐ
             const existingImage = editingOriginalName ? (products[editingOriginalName]?.image || null) : (products[name]?.image || null);
             doPost(existingImage);
-
         }
-        // ここまで変更
     }
 
-    // --- 修正版：パスワード付きの削除処理（即時画面からも消える） ---
     async function deleteProduct(name) {
         const pass = prompt(`「${name}」を削除します。パスワードを入力してください`);
         if (!pass) return;
@@ -280,9 +279,7 @@
             const result = await res.json();
             if(result.status === "success") {
                 alert("削除しました");
-                // 画面上のデータ(products変数)からも削除
                 delete products[name];
-                // 再描画して「(2件)」などの表示も更新
                 refreshUI();
             } else {
                 alert("削除に失敗しました（パスワード違いなど）");
@@ -292,29 +289,23 @@
         }
     }
 
-    let editingOriginalName = null; // 編集中の元の商品名を保持
+    let editingOriginalName = null;
 
-    // --- 編集モードに入る ---
     function editProduct(name) {
         const item = products[name];
         if (!item) return;
         editingOriginalName = name;
-
         document.getElementById('itemTitleInput').value = name;
         document.getElementById('unitWeight').value = item.weight;
         document.getElementById('itemImage').value = '';
-
         document.getElementById('editModeBanner').classList.remove('hidden');
         document.getElementById('editTargetName').textContent = name;
         document.getElementById('cancelBtn').classList.remove('hidden');
         document.getElementById('saveBtn').textContent = '変更を保存';
-
-        // フォームまでスクロール
         document.getElementById('itemTitleInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
         document.getElementById('itemTitleInput').focus();
     }
 
-    // --- 編集キャンセル ---
     function cancelEdit() {
         editingOriginalName = null;
         clearForm();
@@ -336,28 +327,77 @@
         document.getElementById('dbCount').textContent = Object.keys(products).length;
     }
 
+    function normalizeText(str) {
+        if (!str) return "";
+        return str
+            .toLowerCase()
+            .replace(/[\u30a1-\u30f6]/g, function(match) {
+                return String.fromCharCode(match.charCodeAt(0) - 0x60);
+            })
+            .replace(/[！-～]/g, function(match) {
+                return String.fromCharCode(match.charCodeAt(0) - 0xfee0);
+            })
+            .replace(/　/g, " ");
+    }
+
     function updateDropdown() {
         const select = document.getElementById('productSelect');
-        const term = document.getElementById('searchInput').value.toLowerCase();
+        const searchInput = document.getElementById('searchInput');
+        const term = normalizeText(searchInput.value);
         const currentVal = select.value;
+        
         select.innerHTML = '<option value="">-- 商品を選択してください --</option>';
-        Object.keys(products).sort().forEach(name => {
-            if (name.toLowerCase().includes(term)) {
+        
+        let matchCount = 0;
+        let lastMatchedName = "";
+        let isCurrentValStillAvailable = false;
+
+        // 日本語あいうえお順でソート
+        const sortedKeys = Object.keys(products).sort((a, b) => a.localeCompare(b, 'ja'));
+
+        sortedKeys.forEach(name => {
+            const normalizedName = normalizeText(name);
+            if (normalizedName.includes(term)) {
                 const opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
                 select.appendChild(opt);
+                
+                matchCount++;
+                lastMatchedName = name;
+                if (name === currentVal) isCurrentValStillAvailable = true;
             }
         });
-        select.value = products[currentVal] ? currentVal : "";
+
+        if (isCurrentValStillAvailable) {
+            select.value = currentVal;
+        } else if (matchCount === 1) {
+            select.value = lastMatchedName;
+        } else {
+            select.value = "";
+        }
     }
 
     function updateTable() {
         const tbody = document.getElementById('dbList');
         tbody.innerHTML = '';
-        Object.keys(products).sort().forEach(name => {
+        
+        // 日本語あいうえお順でソート
+        const sortedKeys = Object.keys(products).sort((a, b) => a.localeCompare(b, 'ja'));
+
+        sortedKeys.forEach(name => {
             const item = products[name];
             const tr = document.createElement('tr');
+            
+            // ここから修正：行をクリックしたら計測画面へ
+            tr.style.cursor = "pointer";
+            tr.onclick = (e) => {
+                // 編集・削除ボタンが押された時は発動しないようにガード
+                if (e.target.tagName !== 'BUTTON') {
+                    selectAndJump(name);
+                }
+            };
+            
             tr.innerHTML = `
                 <td><img src="${item.image || 'https://via.placeholder.com/40'}" class="thumb"></td>
                 <td><strong>${name}</strong></td>
@@ -390,6 +430,7 @@
 
     function filterProducts() {
         updateDropdown();
+        updateDisplay();
     }
 
     function calculate() {
