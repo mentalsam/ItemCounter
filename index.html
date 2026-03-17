@@ -244,6 +244,17 @@
 <script>
 const GAS_URL = "https://script.google.com/macros/s/AKfycbz7W_OoiK7r0x0objtD3zcRPH5HC6fP9-is8QvC_nNJgw9_o0JcJ_1waBJq6VkHSYo/exec";
 
+// Googleドライブのview用画像URL → "https://drive.google.com/uc?id=xxx" のimg直表示URLへ変換関数
+function convertGoogleDriveUrl(url) {
+    if (typeof url !== 'string') return url;
+    // 例: https://drive.google.com/file/d/XXXXXXXXXX/view?usp=sharing → https://drive.google.com/uc?id=XXXXXXXXXX
+    const match = url.match(/^https:\/\/drive\.google\.com\/file\/d\/([^\/]+)\/view(?:\?.*)?$/);
+    if(match) {
+        return `https://drive.google.com/uc?id=${match[1]}`;
+    }
+    return url; // Base64や既に直接表示可能なURLなら変換しない
+}
+
 async function hashPass(raw) {
     const buf = await crypto.subtle.digest(
         'SHA-256',
@@ -269,9 +280,9 @@ window.onload = async () => {
         products = {};
 
         data.forEach(item => {
-
-            products[item.name] = { weight: item.weight, image: item.image };
-
+            // imageURLのGoogleドライブ変換
+            let imageUrl = item.image ? convertGoogleDriveUrl(item.image) : null;
+            products[item.name] = { weight: item.weight, image: imageUrl };
         });
 
         refreshUI();
@@ -384,7 +395,7 @@ async function addProduct() {
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
-                        const MAX_WIDTH = 400;
+                        const MAX_WIDTH = 1000;
                         let width = img.width;
                         let height = img.height;
                         if (width > MAX_WIDTH) {
@@ -394,7 +405,7 @@ async function addProduct() {
                         canvas.width = width;
                         canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
-                        resolve(canvas.toDataURL('image/jpeg', 0.6));
+                        resolve(canvas.toDataURL('image/jpeg', 0.85));
                     };
                     img.onerror = reject;
                     img.src = e.target.result;
@@ -666,7 +677,8 @@ function updateTable() {
     sortedKeys.forEach(name => {
 
         const item = products[name];
-
+        // GoogleDrive直表示URL変換
+        const imageSrc = item.image ? convertGoogleDriveUrl(item.image) : '';
         const tr = document.createElement('tr');
 
         tr.style.cursor = "pointer";
@@ -681,11 +693,9 @@ function updateTable() {
 
         };
 
-        
-
         tr.innerHTML = `
 
-            <td>${item.image ? `<img src="${item.image}" class="thumb">` : '<div class="thumb" style="display:inline-block;background:#e2e8f0;border-radius:4px;"></div>'}</td>
+            <td>${imageSrc ? `<img src="${imageSrc}" class="thumb">` : '<div class="thumb" style="display:inline-block;background:#e2e8f0;border-radius:4px;"></div>'}</td>
 
             <td><strong>${name}</strong></td>
 
@@ -721,7 +731,9 @@ function updateDisplay() {
         const item = products[name];
         preview.classList.remove('hidden');
         info.textContent = `1個あたり: ${item.weight} kg (タップで拡大)`;
-        img.src = item.image || '';
+        // 表示URL変換（Googleドライブ画像用変換）
+        const shownImgSrc = item.image ? convertGoogleDriveUrl(item.image) : '';
+        img.src = shownImgSrc;
         img.style.display = item.image ? 'inline' : 'none';
 
         // --- 追加：タップで拡大する処理 ---
@@ -730,7 +742,7 @@ function updateDisplay() {
             img.onclick = () => {
                 const modal = document.getElementById('imageModalOverlay');
                 const modalImg = document.getElementById('modalFullImage');
-                modalImg.src = item.image;
+                modalImg.src = shownImgSrc;
                 modal.classList.remove('hidden');
             };
         } else {
