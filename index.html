@@ -96,10 +96,39 @@
         .autocomplete-item:last-child { border-bottom: none; }
         .autocomplete-item:hover { background-color: #e2e8f0; }
         
+        /* 拡大プレビュー用CSS（追加） */
+        #imageModalOverlay {
+            position: fixed;
+            z-index: 9999;
+            left: 0; top: 0; width: 100vw; height: 100vh;
+            background: rgba(30,41,59,0.85);
+            display: none; /* ← 最初は隠すように変更 */
+            align-items: center; 
+            justify-content: center;
+            cursor: zoom-out;
+        }
+        /* 追加：hiddenクラスが外れた時だけ表示する */
+        #imageModalOverlay:not(.hidden) {
+            display: flex;
+        }
+        #imageModalOverlay img {
+            max-width: 96vw;
+            max-height: 96vh;
+            border-radius: 16px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+            cursor: zoom-out;
+            background: #fff;
+        }
+
         @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
+
+<!-- 画像拡大モーダル：bodyタグ直下に追加 -->
+<div id="imageModalOverlay" class="hidden" onclick="this.classList.add('hidden')">
+    <img id="modalFullImage">
+</div>
 
 <div class="container">
     <h1>📦 商品データベース管理</h1>
@@ -213,7 +242,7 @@
 </div>
 
 <script>
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwN8CncPnFE5uPY2DE97zrKkDltY3MhcHIuNXVz-iDylM-KhGR0f3FackMDEY6wdVk/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbz-hTvasV5-z0owtsfTPLene57mrhFtWTjnW9IFTPSldPL7lcnl7Br_g9CuH05b9Is/exec";
 
 let products = {};
 
@@ -354,9 +383,12 @@ async function addProduct() {
         }
 
         try {
-
-            const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
-
+            // Content-Typeは明示的に指定しないことでCORSの問題を回避
+            const res = await fetch(GAS_URL, { 
+                method: "POST", 
+                body: JSON.stringify(payload) 
+                // Content-Typeを省略
+            });
             const result = await res.json();
 
             if(result.status === "error") return alert("パスワードが違います");
@@ -385,7 +417,7 @@ async function addProduct() {
 
                 const ctx = canvas.getContext('2d');
 
-                const MAX_WIDTH = 200;
+                const MAX_WIDTH = 1200; // ドライブ保存なので1200pxなど大きくしてOK！
 
                 let width = img.width;
 
@@ -405,7 +437,7 @@ async function addProduct() {
 
                 ctx.drawImage(img, 0, 0, width, height);
 
-                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8); // 画質も0.8にアップ
 
                 doPost(compressedBase64);
 
@@ -692,42 +724,42 @@ function updateTable() {
 
 }
 
+// --- updateDisplayを指示通り書き換え ---
 function updateDisplay() {
-
     const searchInput = document.getElementById('searchInput');
-
     if(!searchInput) return;
 
     const name = searchInput.value;
-
     const preview = document.getElementById('productPreview');
-
     const img = document.getElementById('displayImage');
-
     const info = document.getElementById('weightInfo');
 
-    
-
     if (name && products[name]) {
-
         const item = products[name];
-
         preview.classList.remove('hidden');
-
-        info.textContent = `1個あたり: ${item.weight} kg`;
-
+        info.textContent = `1個あたり: ${item.weight} kg (タップで拡大)`;
         img.src = item.image || '';
-
         img.style.display = item.image ? 'inline' : 'none';
 
+        // --- 追加：タップで拡大する処理 ---
+        if(item.image) {
+            img.style.cursor = 'zoom-in';
+            img.onclick = () => {
+                const modal = document.getElementById('imageModalOverlay');
+                const modalImg = document.getElementById('modalFullImage');
+                modalImg.src = item.image;
+                modal.classList.remove('hidden');
+            };
+        } else {
+            img.onclick = null;
+            img.style.cursor = 'default';
+        }
+        // ------------------------------
     } else {
-
         preview.classList.add('hidden');
-
     }
 
     calculate();
-
 }
 
 function calculate() {
