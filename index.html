@@ -242,7 +242,17 @@
 </div>
 
 <script>
-const GAS_URL = "https://script.google.com/macros/s/AKfycbz-hTvasV5-z0owtsfTPLene57mrhFtWTjnW9IFTPSldPL7lcnl7Br_g9CuH05b9Is/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbz7W_OoiK7r0x0objtD3zcRPH5HC6fP9-is8QvC_nNJgw9_o0JcJ_1waBJq6VkHSYo/exec";
+
+async function hashPass(raw) {
+    const buf = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(raw)
+    );
+    return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
 
 let products = {};
 
@@ -348,122 +358,95 @@ async function addProduct() {
 
     const fileInput = document.getElementById('itemImage');
 
-    
+    const rawPass = prompt("店番を入力してください");
 
-    const pass = prompt("店番を入力してください");
+    if (!rawPass) return;
 
-    if (!pass) return;
+    const pass = await hashPass(rawPass);
 
     if (!name || !weight) return alert("商品名と重量は必須です");
 
-    const doPost = async (imgData) => {
+    const saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
 
-        const payload = {
+    try {
+        // 画像がある場合はリサイズ・圧縮してBase64に変換
+        let imageBase64 = null;
 
-            pass: pass,
-
-            name: name,
-
-            weight: parseFloat(weight),
-
-            image: imgData
-
-        };
-
-        if (editingOriginalName && editingOriginalName !== name) {
-
-            payload.oldName = editingOriginalName;
-
-            payload.action = "update";
-
-        } else if (editingOriginalName) {
-
-            payload.action = "update";
-
+        if (fileInput.files && fileInput.files[0]) {
+            saveBtn.textContent = '画像変換中...';
+            imageBase64 = await new Promise((resolve, reject) => {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const MAX_WIDTH = 400;
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.6));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        } else {
+            // 画像変更なし：既存Base64を引き継ぐ
+            imageBase64 = editingOriginalName
+                ? (products[editingOriginalName]?.image || null)
+                : (products[name]?.image || null);
         }
 
-        try {
-            // Content-Typeは明示的に指定しないことでCORSの問題を回避
-            const res = await fetch(GAS_URL, { 
-                method: "POST", 
-                body: JSON.stringify(payload) 
-                // Content-Typeを省略
-            });
-            const result = await res.json();
-
-            if(result.status === "error") return alert("パスワードが違います");
-
-            alert(editingOriginalName ? "更新しました！" : "クラウドに保存しました！");
-
-            location.reload();
-
-        } catch (err) { alert("通信エラーが発生しました"); }
-
-    };
-
-    if (fileInput.files && fileInput.files[0]) {
-
-        const file = fileInput.files[0];
-
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
-
-            const img = new Image();
-
-            img.onload = () => {
-
-                const canvas = document.createElement('canvas');
-
-                const ctx = canvas.getContext('2d');
-
-                const MAX_WIDTH = 1200; // ドライブ保存なので1200pxなど大きくしてOK！
-
-                let width = img.width;
-
-                let height = img.height;
-
-                if (width > MAX_WIDTH) {
-
-                    height *= MAX_WIDTH / width;
-
-                    width = MAX_WIDTH;
-
-                }
-
-                canvas.width = width;
-
-                canvas.height = height;
-
-                ctx.drawImage(img, 0, 0, width, height);
-
-                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8); // 画質も0.8にアップ
-
-                doPost(compressedBase64);
-
-            };
-
-            img.src = e.target.result;
-
+        // 商品データ（名前・重量・Base64画像）を1回のPOSTで保存
+        saveBtn.textContent = 'データ保存中...';
+        const payload = {
+            pass: pass,
+            name: name,
+            weight: parseFloat(weight),
+            image: imageBase64
         };
+        if (editingOriginalName && editingOriginalName !== name) {
+            payload.oldName = editingOriginalName;
+            payload.action = "update";
+        } else if (editingOriginalName) {
+            payload.action = "update";
+        }
 
-        reader.readAsDataURL(file);
+        const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
+        const result = await res.json();
 
-    } else {
+        if (result.status === "error") return alert("パスワードが違います");
 
-        const existingImage = editingOriginalName ? (products[editingOriginalName]?.image || null) : (products[name]?.image || null);
+        alert(editingOriginalName ? "更新しました！" : "クラウドに保存しました！");
+        location.reload();
 
-        doPost(existingImage);
-
+    } catch (err) {
+        alert("通信エラーが発生しました");
+        saveBtn.disabled = false;
+        saveBtn.textContent = editingOriginalName ? '変更を保存' : 'データベースへ保存';
     }
 
 }
 
 async function deleteProduct(name) {
 
-    const pass = prompt(`「${name}」を削除します。パスワードを入力してください`);
+    const rawPass = prompt(`「${name}」を削除します。パスワードを入力してください`);
 
-    if (!pass) return;
+    if (!rawPass) return;
+
+    const pass = await hashPass(rawPass);
 
     try {
 
@@ -702,7 +685,7 @@ function updateTable() {
 
         tr.innerHTML = `
 
-            <td><img src="${item.image || 'https://via.placeholder.com/40'}" class="thumb"></td>
+            <td>${item.image ? `<img src="${item.image}" class="thumb">` : '<div class="thumb" style="display:inline-block;background:#e2e8f0;border-radius:4px;"></div>'}</td>
 
             <td><strong>${name}</strong></td>
 
